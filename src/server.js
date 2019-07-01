@@ -1,57 +1,37 @@
 import { connectMongoDB } from './mongoose'
 import web3 from './web3'
-import Block from './models/Block'
-import TX from './models/TX'
+import TX from './models/TX.full'
+import Checkpoint from './models/Checkpoint'
 
-import cluster from 'cluster'
-import os from 'os'
-
-
-const limit = 10000
+let checkpoint = null
 
 const traceTX = async () => {
-    const blocks = await Block.find({scanned: false}).sort({number: 1}).limit(limit)
-    
-    if (!blocks) {
-        console.log(`blocks not found`)
-        return true
+
+    checkpoint = checkpoint || (await Checkpoint.findOne({ mission: 'fulltx' }) || new Checkpoint({ mission: 'fulltx', at: 11000000 }))
+    await checkpoint.save()
+
+    const blockNumber = checkpoint.at === 0 ? 0 : checkpoint.at + 1
+
+    const block = await web3.eth.getBlock(blockNumber)
+
+    if (!block) {
+        console.log(`A L L  D O N E`)
+        process.exit(0)
     }
-    console.log(`Tracing from block ${blocks[0].number}`)
-    
-    const txs = blocks.map(block => block.raw.transactions.map(transaction => {return {timestamp: block.raw.timestamp, hash: transaction}})).reduce((txs, arr) => [...txs, ...arr], [])
 
-    console.log({txs: txs.length})
-    
-    const txBatch = new web3.eth.BatchRequest()
-    const receiptBatch = new web3.eth.BatchRequest()
+    for (const hash of block.transactions) {
+        const transaction = await web3.eth.getTransaction(hash)
+        const receipt = await web3.eth.getTransactionReceipt(hash)
+        const tx = {
+            timestamp: block.timestamp,
+            hash,
+            transaction,
+            receipt
+        }
+        await TX.findOneAndUpdate({ hash: tx.hash }, { tx }, { upsert: true, setDefaultsOnInsert: true })
+    }
 
-    txs.forEach(tx => {
-        txBatch.add(web3.eth.getTransaction.request(tx.hash, () => {}))
-        receiptBatch.add(web3.eth.getTransactionReceipt.request(tx.hash, () => {}))
-    })
-    
-    const [txBatchResult, receiptBatchResult] = await Promise.all([txBatch.execute(), receiptBatch.execute()])
-    // const txBatchResult = await txBatch.execute()
-    // const receiptBatchResult = await receiptBatch.execute()
-
-    console.log({txBatchResult: txBatchResult.response.length})
-    console.log({receiptBatchResult: receiptBatchResult.response.length})
-
-    txs.forEach((tx, i) => {
-        tx.transaction = txBatchResult.response[i],
-        tx.receipt = receiptBatchResult.response[i]
-    })
-
-    await TX.insertMany(txs)
-
-    const updates = []
-    
-    blocks.map(block => {
-        block.scanned = true
-        updates.push(block.save())    
-    })
-
-    await Promise.all(updates)
+    checkpoint.at += 1
 
     traceTX()
 }
@@ -59,7 +39,17 @@ const traceTX = async () => {
 
 const start = async () => {
     await connectMongoDB()
+
+    const numBlocks = await web3.eth.getBlockNumber()
+    console.log({ numBlocks })
+
+
     traceTX()
+
+    setInterval(() => {
+        console.log(`> passed: ${(checkpoint.at * 100 / numBlocks).toFixed(4)} %`)
+
+    }, 2000)
 }
 
 
