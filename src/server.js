@@ -7,7 +7,7 @@ let checkpoint = null
 
 const traceTX = async () => {
 
-    checkpoint = checkpoint || (await Checkpoint.findOne({ mission: 'fulltx' }) || new Checkpoint({ mission: 'fulltx', at: 11000000 }))
+    checkpoint = checkpoint || (await Checkpoint.findOne({ mission: 'fulltx' }) || new Checkpoint({ mission: 'fulltx', at: 0 }))
     await checkpoint.save()
 
     const blockNumber = checkpoint.at === 0 ? 0 : checkpoint.at + 1
@@ -15,7 +15,7 @@ const traceTX = async () => {
     const block = await web3.eth.getBlock(blockNumber)
 
     if (!block) {
-        console.log(`Raw full txs is up-to-date`)
+        console.log(`Raw full txs is up-to-date at checkpoint ${checkpoint.at}`)
         setTimeout(traceTX, 1000)
     } else {
         for (const hash of block.transactions) {
