@@ -28,7 +28,7 @@ const traceTX = async () => {
             transaction,
             receipt
         }
-        await TX.findOneAndUpdate({ hash: tx.hash }, { tx }, { upsert: true, setDefaultsOnInsert: true })
+        await TX.findOneAndUpdate({ hash: tx.hash }, tx, { upsert: true, setDefaultsOnInsert: true })
     }
 
     checkpoint.at += 1
