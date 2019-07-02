@@ -15,39 +15,37 @@ const traceTX = async () => {
     const block = await web3.eth.getBlock(blockNumber)
 
     if (!block) {
-        console.log(`A L L  D O N E`)
-        process.exit(0)
-    }
-
-    for (const hash of block.transactions) {
-        const transaction = await web3.eth.getTransaction(hash)
-        const receipt = await web3.eth.getTransactionReceipt(hash)
-        const tx = {
-            timestamp: block.timestamp,
-            hash,
-            transaction,
-            receipt
+        console.log(`Raw full txs is up-to-date`)
+        setTimeout(traceTX, 1000)
+    } else {
+        for (const hash of block.transactions) {
+            const transaction = await web3.eth.getTransaction(hash)
+            const receipt = await web3.eth.getTransactionReceipt(hash)
+            const tx = {
+                timestamp: block.timestamp,
+                hash,
+                transaction,
+                receipt
+            }
+            await TX.findOneAndUpdate({ hash: tx.hash }, tx, { upsert: true, setDefaultsOnInsert: true })
         }
-        await TX.findOneAndUpdate({ hash: tx.hash }, tx, { upsert: true, setDefaultsOnInsert: true })
+
+        checkpoint.at += 1
+
+        traceTX()
     }
-
-    checkpoint.at += 1
-
-    traceTX()
 }
 
 
 const start = async () => {
     await connectMongoDB()
 
-    const numBlocks = await web3.eth.getBlockNumber()
-    console.log({ numBlocks })
-
-
     traceTX()
 
-    setInterval(() => {
-        console.log(`> passed: ${(checkpoint.at * 100 / numBlocks).toFixed(4)} %`)
+    setInterval(async () => {
+        const numBlocks = await web3.eth.getBlockNumber()
+        console.log({ numBlocks })
+        console.log(`> passed: ${(checkpoint.at * 100 / numBlocks).toFixed(1)} %`)
 
     }, 2000)
 }
